@@ -12,6 +12,7 @@ from flask import (
     session, send_file, jsonify, abort
 )
 import qrcode
+from werkzeug.exceptions import HTTPException
 
 logger = logging.getLogger("wedding-camera")
 
@@ -33,7 +34,7 @@ WEDDING = {
 }
 
 # Passcode the bride & groom use to view the private gallery.
-GALLERY_PASSCODE = "ourwedding2026"
+GALLERY_PASSCODE = os.environ.get("GALLERY_PASSCODE", "ourwedding2026")
 
 # The one built-in look every photo gets automatically. Guests can't change this.
 BUILT_IN_FILTER = {
@@ -215,7 +216,7 @@ def store_in_cloud(filename, binary, mimetype="image/jpeg"):
 
 
 app = Flask(__name__)
-app.secret_key = "change-this-to-any-random-string"  # needed for login session
+app.secret_key = os.environ.get("SECRET_KEY", "change-this-to-any-random-string")  # needed for login session
 
 UPLOAD_FOLDER = os.path.join(app.static_folder, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -228,6 +229,31 @@ def login_required(f):
             return redirect(url_for("gallery_login", next=request.path))
         return f(*args, **kwargs)
     return wrapped
+
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    """Return the real error as JSON (and log it) instead of a blank 500 page."""
+    if isinstance(e, HTTPException):
+        return e
+    logger.exception("Unhandled error")
+    return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/drive-test")
+@login_required
+def drive_test():
+    """Log in at /gallery/login, then open /drive-test to see the exact Google Drive error."""
+    d = STORAGE_CHAIN[0]
+    if not d.configured:
+        return ("Missing one of GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / "
+                "GOOGLE_REFRESH_TOKEN / GDRIVE_FOLDER_ID in Render's Environment tab"), 500
+    try:
+        d.upload("drive-test.txt", b"hello", "text/plain")
+        return "Drive OK. Check your Drive folder for drive-test.txt"
+    except Exception as e:
+        logger.exception("Drive test failed")
+        return f"Drive FAILED: {type(e).__name__}: {e}", 500
 
 
 @app.route("/")
@@ -323,4 +349,4 @@ def qr_code():
 
 if __name__ == "__main__":
     # host=0.0.0.0 so phones on the same wifi (or via a tunnel) can reach it
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
