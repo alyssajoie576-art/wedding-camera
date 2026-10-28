@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ wedding.partner_1 }} &amp; {{ wedding.partner_2 }} — Wedding Album</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Work+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+  <div class="top-bar">
+    <a href="{{ url_for('gallery_logout') }}" class="pill-btn">Log out</a>
+    {% if count > 0 %}
+    <a href="{{ url_for('download_all') }}" class="pill-btn solid">Download All ({{ count }})</a>
+    {% endif %}
+  </div>
+
+  <div class="gallery-header">
+    <p class="eyebrow">The Album</p>
+    <h1 class="headline">{{ wedding.partner_1 }}<span class="amp">&amp;</span>{{ wedding.partner_2 }}</h1>
+    <p class="gallery-count">{{ count }} photo{{ '' if count == 1 else 's' }} from your guests</p>
+  </div>
+
+  {% if photos %}
+  <div class="grid">
+    {% for p in photos %}
+    <a href="#" data-src="{{ url_for('static', filename='uploads/' + p) }}" class="thumb-link">
+      <img src="{{ url_for('static', filename='uploads/' + p) }}" loading="lazy" alt="Guest photo">
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <span class="icon">🕊️</span>
+    No photos yet — once guests start scanning the QR code, they'll show up here.
+  </div>
+  {% endif %}
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
+  <img id="lightboxImg" src="" alt="Full size guest photo">
+</div>
+
+<script>
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightboxImg');
+document.querySelectorAll('.thumb-link').forEach(a => {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    lightboxImg.src = a.dataset.src;
+    lightbox.classList.add('open');
+  });
+});
+document.getElementById('lightboxClose').addEventListener('click', () => lightbox.classList.remove('open'));
+lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.classList.remove('open'); });
+</script>
+</body>
+</html>

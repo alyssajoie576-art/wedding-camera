@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ wedding.partner_1 }} &amp; {{ wedding.partner_2 }} — Guest Photobooth</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Work+Sans:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand-row">
+    <p class="eyebrow">Guest Photobooth</p>
+  </div>
+  <h1 class="headline">Forever Begins for<br>{{ wedding.partner_1 }}<span class="amp">&amp;</span>{{ wedding.partner_2 }}</h1>
+  <span class="date-pill">{{ wedding.date }}</span>
+  <div class="details">
+    <span>{{ wedding.venue }}</span>
+    <span>{{ wedding.hashtag }}</span>
+  </div>
+
+  <div class="card">
+    <!-- floral corner doodle -->
+    <svg class="doodle doodle-floral" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10 55 C 8 40, 20 25, 15 10" stroke="#8A9A6E" stroke-width="1.4" stroke-linecap="round"/>
+      <circle cx="15" cy="10" r="5" stroke="#C9A15E" stroke-width="1.4"/>
+      <circle cx="24" cy="16" r="4.2" stroke="#C9A15E" stroke-width="1.4"/>
+      <circle cx="8" cy="18" r="4.2" stroke="#C9A15E" stroke-width="1.4"/>
+      <circle cx="16" cy="24" r="3.4" stroke="#C6725A" stroke-width="1.3"/>
+      <path d="M28 46 q6 -4 10 2" stroke="#C6725A" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+      <path d="M28 46 q-6 -4 -10 2" stroke="#C6725A" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+    </svg>
+    <!-- confetti / hearts doodle -->
+    <svg class="doodle doodle-confetti" viewBox="0 0 70 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M50 12c-3-3-7-1-6 3 1 4 6 7 6 7s5-3 6-7c1-4-3-6-6-3z" stroke="#C6725A" stroke-width="1.4"/>
+      <circle cx="18" cy="14" r="2.2" fill="#C9A15E"/>
+      <circle cx="30" cy="8" r="1.6" fill="#8A9A6E"/>
+      <rect x="10" y="28" width="5" height="2.4" rx="1" fill="#C6725A" transform="rotate(20 10 28)"/>
+      <path d="M55 32c4 1 4 6 0 9-3-2-6-6-6-9 0-3 4-3 6 0z" stroke="#8A9A6E" stroke-width="1.3"/>
+      <circle cx="40" cy="30" r="1.6" fill="#C9A15E"/>
+    </svg>
+
+    <p class="welcome" id="welcomeMsg">{{ wedding.welcome_message }}</p>
+
+    <div class="field">
+      <label for="guestName">Your name (optional)</label>
+      <input type="text" id="guestName" placeholder="e.g. Alex from the bride's side" maxlength="40">
+    </div>
+
+    <div class="stage" id="stage">
+
+      <!-- Screen 1: personalized camera, tap anywhere to open -->
+      <div class="camera-shell" id="cameraShell">
+        <div class="camera-body">
+          <div class="camera-top">
+            <span class="camera-dial"></span>
+            <span class="camera-flash"></span>
+          </div>
+          <div class="camera-lens-ring">
+            <div class="camera-lens">
+              <img src="{{ url_for('static', filename=wedding.couple_photo) }}" alt="" id="couplePhoto"
+                   onerror="this.style.display='none'; document.getElementById('lensFallback').style.display='flex';">
+              <div class="lens-fallback" id="lensFallback">🤍</div>
+              <div class="lens-glare"></div>
+            </div>
+          </div>
+          <p class="camera-label">{{ wedding.partner_1 }} &amp; {{ wedding.partner_2 }}</p>
+        </div>
+        <p class="tap-hint">Tap anywhere to open the camera</p>
+      </div>
+
+      <!-- Screen 2: live viewfinder -->
+      <div class="viewfinder" id="viewfinder">
+        <video id="cameraVideo" autoplay playsinline muted></video>
+        <div class="viewfinder-frame">
+          <span class="vf-corner tl"></span>
+          <span class="vf-corner tr"></span>
+          <span class="vf-corner bl"></span>
+          <span class="vf-corner br"></span>
+        </div>
+        <div class="vf-hud">
+          <span class="vf-rec">● REC</span>
+          <span class="vf-mode">{{ filter.label|upper }} · AUTO</span>
+        </div>
+        <button class="flip-btn" id="flipBtn" aria-label="Switch camera">⟳</button>
+        <p class="vf-hint">Tap anywhere to capture</p>
+      </div>
+
+      <canvas id="canvas" style="display:none;"></canvas>
+      <div class="flash-overlay" id="flashOverlay"></div>
+    </div>
+
+    <div class="success" id="successBox" style="display:none;">
+      <span class="icon">🤍</span>
+      <h2>Added to the album!</h2>
+      <p id="successNote">Thank you for capturing this moment.</p>
+    </div>
+
+    <p class="hint" id="hintText">Photos save automatically to {{ wedding.partner_1 }} &amp; {{ wedding.partner_2 }}'s shared album — no extra taps needed.</p>
+  </div>
+</div>
+
+<script>
+const BUILT_IN_FILTER = {{ filter | tojson }};
+const stage = document.getElementById('stage');
+const cameraShell = document.getElementById('cameraShell');
+const viewfinder = document.getElementById('viewfinder');
+const video = document.getElementById('cameraVideo');
+const flipBtn = document.getElementById('flipBtn');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const flashOverlay = document.getElementById('flashOverlay');
+const successBox = document.getElementById('successBox');
+const successNote = document.getElementById('successNote');
+const hintText = document.getElementById('hintText');
+const guestNameInput = document.getElementById('guestName');
+
+let mediaStream = null;
+let facingMode = 'environment';
+let opening = false;
+let busy = false; // true while capturing/uploading, to ignore extra taps
+
+async function requestStream() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
+  } catch (err) {
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (err2) {
+      alert("We couldn't access your camera. Please check your browser's camera permission and try again.");
+      resetToStart();
+      return null;
+    }
+  }
+  return mediaStream;
+}
+
+function stopStream() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
+}
+
+// --- Screen 1 -> Screen 2: flip + zoom into the viewfinder ---
+
+cameraShell.addEventListener('click', openCamera);
+
+async function openCamera() {
+  if (opening) return;
+  opening = true;
+
+  // Ask for the camera right away so the stream is ready by the time the
+  // flip/zoom animation finishes.
+  const streamPromise = requestStream();
+
+  cameraShell.classList.add('flip-out');
+  setTimeout(async () => {
+    cameraShell.style.display = 'none';
+    viewfinder.style.display = 'block';
+    viewfinder.classList.add('zoom-in');
+    viewfinder.classList.toggle('mirror', facingMode === 'user');
+    const stream = await streamPromise;
+    if (stream) video.srcObject = stream;
+  }, 260);
+}
+
+flipBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  viewfinder.classList.toggle('mirror', facingMode === 'user');
+  stopStream();
+  const stream = await requestStream();
+  if (stream) video.srcObject = stream;
+});
+
+viewfinder.addEventListener('click', (e) => {
+  if (e.target === flipBtn) return;
+  snapPhoto();
+});
+
+// --- Capture: burn in the fixed filter + a timestamp, then auto-upload ---
+
+function snapPhoto() {
+  if (busy) return;
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return;
+  busy = true;
+
+  flashOverlay.classList.add('flash');
+  setTimeout(() => flashOverlay.classList.remove('flash'), 350);
+
+  canvas.width = w;
+  canvas.height = h;
+  ctx.filter = BUILT_IN_FILTER.css;
+  if (facingMode === 'user') {
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
+  } else {
+    ctx.drawImage(video, 0, 0, w, h);
+  }
+  ctx.filter = 'none';
+  stampTimestamp(w, h);
+
+  stopStream();
+  viewfinder.style.display = 'none';
+  uploadPhoto();
+}
+
+function stampTimestamp(w, h) {
+  const text = new Date().toLocaleString('en-US', {
+    month: '2-digit', day: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  }).replace(',', '');
+  const fontSize = Math.max(18, Math.round(w * 0.032));
+  ctx.font = `700 ${fontSize}px 'Space Mono', monospace`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  const pad = fontSize * 0.9;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillText(text, w - pad + 1.5, h - pad + 1.5);
+  ctx.fillStyle = '#f4a33c';
+  ctx.fillText(text, w - pad, h - pad);
+}
+
+async function uploadPhoto() {
+  successNote.textContent = 'Saving your photo…';
+  successBox.style.display = 'block';
+  hintText.style.display = 'none';
+  try {
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const res = await fetch('/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl, guest_name: guestNameInput.value })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Upload failed');
+    successNote.textContent = 'Thank you for capturing this moment.';
+  } catch (err) {
+    successNote.textContent = "Hmm, that didn't save. We'll return you to the camera — please try again.";
+  } finally {
+    setTimeout(resetToStart, 2600);
+  }
+}
+
+function resetToStart() {
+  busy = false;
+  opening = false;
+  stopStream();
+  successBox.style.display = 'none';
+  hintText.style.display = 'block';
+  viewfinder.style.display = 'none';
+  viewfinder.classList.remove('zoom-in');
+  cameraShell.classList.remove('flip-out');
+  cameraShell.style.display = 'flex';
+}
+</script>
+</body>
+</html>
