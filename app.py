@@ -27,6 +27,9 @@ WEDDING = {
     "welcome_message": "Help us capture today from every angle — tap the camera to snap a photo. It'll land straight in our shared album!",
     # Drop a photo of the two of you at static/couple.jpg (square-ish photos work best).
     "couple_photo": "couple.jpg",
+    # Optional intro video: put an mp4 at static/intro.mp4. It plays on its own
+    # (muted) when the page opens; guests tap to open the camera.
+    "intro_video": "intro.mp4",
 }
 
 # Passcode the bride & groom use to view the private gallery.
@@ -230,7 +233,10 @@ def login_required(f):
 @app.route("/")
 def camera():
     """The page guests land on after scanning the QR code."""
-    return render_template("index.html", wedding=WEDDING, filter=BUILT_IN_FILTER)
+    intro = WEDDING.get("intro_video")
+    if intro and not os.path.exists(os.path.join(app.static_folder, intro)):
+        intro = None  # no video file yet -> fall back to the camera illustration
+    return render_template("index.html", wedding=WEDDING, filter=BUILT_IN_FILTER, intro_video=intro)
 
 
 @app.route("/upload", methods=["POST"])

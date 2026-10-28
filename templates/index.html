@@ -52,7 +52,11 @@
     <div class="stage" id="stage">
 
       <!-- Screen 1: personalized camera, tap anywhere to open -->
-      <div class="camera-shell" id="cameraShell">
+      <div class="camera-shell{% if intro_video %} has-video{% endif %}" id="cameraShell">
+        {% if intro_video %}
+        <video class="intro-video" id="introVideo" src="{{ url_for('static', filename=intro_video) }}"
+               autoplay muted loop playsinline preload="auto"></video>
+        {% endif %}
         <div class="camera-body">
           <div class="camera-top">
             <span class="camera-dial"></span>
@@ -112,6 +116,10 @@ const flipBtn = document.getElementById('flipBtn');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const flashOverlay = document.getElementById('flashOverlay');
+const introVideo = document.getElementById('introVideo');
+function playIntro() { if (introVideo) { introVideo.currentTime = 0; introVideo.play().catch(() => {}); } }
+function pauseIntro() { if (introVideo) introVideo.pause(); }
+playIntro();
 const successBox = document.getElementById('successBox');
 const successNote = document.getElementById('successNote');
 const hintText = document.getElementById('hintText');
@@ -155,6 +163,7 @@ async function openCamera() {
   // Ask for the camera right away so the stream is ready by the time the
   // flip/zoom animation finishes.
   const streamPromise = requestStream();
+  pauseIntro();
 
   cameraShell.classList.add('flip-out');
   setTimeout(async () => {
@@ -259,6 +268,7 @@ function resetToStart() {
   viewfinder.classList.remove('zoom-in');
   cameraShell.classList.remove('flip-out');
   cameraShell.style.display = 'flex';
+  playIntro();
 }
 </script>
 </body>

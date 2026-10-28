@@ -289,6 +289,31 @@ html, body {
   margin: 0;
 }
 
+/* Intro video (optional) */
+.camera-shell { position: relative; overflow: hidden; }
+.intro-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+.camera-shell.has-video .camera-body { display: none; }
+.camera-shell.has-video .tap-hint {
+  position: absolute;
+  bottom: 18px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  z-index: 1;
+  color: #fff;
+  opacity: 1;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+  animation: tapPulse 1.8s ease-in-out infinite;
+}
+@keyframes tapPulse { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+
 /* Screen 2 — live viewfinder */
 .viewfinder {
   display: none;

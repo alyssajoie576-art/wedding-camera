@@ -36,6 +36,19 @@ best — it sits inside a circular lens). If you'd rather use a different
 filename, just update `"couple_photo"` above to match. If no photo is found,
 guests just see a heart icon instead — nothing breaks.
 
+### 1d. Intro video (optional)
+
+Put an mp4 at `static/intro.mp4`. It plays by itself (muted, looping) when the
+page opens, with "Tap anywhere to open the camera" pulsing on top. Guests can
+tap at any moment — they don't have to wait for it to finish — and it flips
+into the live camera. If there's no `static/intro.mp4`, guests see the camera
+illustration with your couple photo instead.
+
+Tips: use **mp4 (H.264)** — iPhone `.mov` files may not play on Android;
+keep it **under about 10 MB** (720p, 10–20 seconds) so it loads quickly on
+venue Wi-Fi/data; and remove the audio track, since phones only autoplay
+muted video. To use a different filename, change `"intro_video"` in `app.py`.
+
 ### 1c. The built-in look
 
 Every photo automatically gets one fixed filter plus a burned-in date/time
