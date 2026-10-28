@@ -39,71 +39,75 @@ BUILT_IN_FILTER = {
 }
 
 # ─────────────────────────────────────────────────────────────
-# Google Drive (permanent photo storage)
+# Google Drive (first choice for storing photos)
 # ─────────────────────────────────────────────────────────────
-# Set these two environment variables to turn Drive backup on:
-#   GOOGLE_SERVICE_ACCOUNT_JSON  -> the full contents of your service-account JSON key
-#   GDRIVE_FOLDER_ID             -> the ID of the Drive folder shared with that service account
-# See README.md for the step-by-step setup. If these aren't set, the app still
-# works fine — it just keeps photos locally only (which is not durable on most
-# free hosts long-term).
-GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID")
-_drive_service = None
-_drive_init_attempted = False
+# Uploads happen AS YOU (not as a robot account), so photos use your own Drive
+# space. Environment variables needed (see README section 2b):
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, GDRIVE_FOLDER_ID
 
+class DriveBackend:
+    name = "Google Drive"
+    SAFETY_MARGIN = 50 * 1024 * 1024  # stop 50 MB before the account is actually full
 
-def get_drive_service():
-    """Lazily build (and cache) an authenticated Google Drive client, or None if not configured."""
-    global _drive_service, _drive_init_attempted
-    if _drive_service is not None:
-        return _drive_service
-    if _drive_init_attempted:
-        return None
-    _drive_init_attempted = True
+    def __init__(self):
+        env = os.environ.get
+        self.client_id = env("GOOGLE_CLIENT_ID")
+        self.client_secret = env("GOOGLE_CLIENT_SECRET")
+        self.refresh_token = env("GOOGLE_REFRESH_TOKEN")
+        self.folder_id = env("GDRIVE_FOLDER_ID")
+        self._service = None
+        self._quota = None
+        self._quota_checked_at = 0
 
-    raw_creds = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if not raw_creds or not GDRIVE_FOLDER_ID:
-        logger.info("Google Drive backup not configured — saving locally only.")
-        return None
+    @property
+    def configured(self):
+        return all([self.client_id, self.client_secret, self.refresh_token, self.folder_id])
 
-    try:
-        from google.oauth2 import service_account
-        from googleapiclient.discovery import build
+    def service(self):
+        if self._service is None:
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
+            creds = Credentials(
+                None,
+                refresh_token=self.refresh_token,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+                token_uri="https://oauth2.googleapis.com/token",
+                scopes=["https://www.googleapis.com/auth/drive"],
+            )
+            self._service = build("drive", "v3", credentials=creds, cache_discovery=False)
+        return self._service
 
-        info = json.loads(raw_creds)
-        creds = service_account.Credentials.from_service_account_info(
-            info, scopes=["https://www.googleapis.com/auth/drive.file"]
-        )
-        _drive_service = build("drive", "v3", credentials=creds, cache_discovery=False)
-        return _drive_service
-    except Exception:
-        logger.exception("Failed to initialize Google Drive client")
-        return None
+    def has_room(self, incoming_bytes):
+        """True unless the Google account is (nearly) out of storage. Checked at most every 5 min."""
+        import time
+        now = time.time()
+        if self._quota is None or now - self._quota_checked_at > USAGE_CACHE_SECONDS:
+            about = self.service().about().get(fields="storageQuota").execute()
+            self._quota = about.get("storageQuota", {})
+            self._quota_checked_at = now
+        limit = self._quota.get("limit")
+        if not limit:  # no limit reported (unlimited plan)
+            return True
+        return int(self._quota.get("usage", 0)) + incoming_bytes + self.SAFETY_MARGIN <= int(limit)
 
-
-def upload_to_drive(filename, binary, mimetype="image/jpeg"):
-    """Upload photo bytes to the shared Drive folder. Returns True on success."""
-    service = get_drive_service()
-    if not service:
-        return False
-    try:
+    def upload(self, filename, binary, mimetype="image/jpeg"):
         from googleapiclient.http import MediaIoBaseUpload
-
-        file_metadata = {"name": filename, "parents": [GDRIVE_FOLDER_ID]}
         media = MediaIoBaseUpload(io.BytesIO(binary), mimetype=mimetype, resumable=False)
-        service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-        return True
-    except Exception:
-        logger.exception("Drive upload failed for %s", filename)
-        return False
+        self.service().files().create(
+            body={"name": filename, "parents": [self.folder_id]},
+            media_body=media, fields="id",
+        ).execute()
+        if self._quota is not None:
+            self._quota["usage"] = int(self._quota.get("usage", 0)) + len(binary)
 
 
 # ─────────────────────────────────────────────────────────────
-# Cloud storage chain: Cloudflare R2 first, then Backblaze B2
+# Storage chain: Google Drive first, then Cloudflare R2, then Backblaze B2
 # ─────────────────────────────────────────────────────────────
-# Both are S3-compatible, so one class handles both. Photos go to the first
-# backend that is configured, under its size cap, and working. If R2 reaches
-# its cap (or an upload to it fails), the app moves on to B2 automatically.
+# R2 and B2 are S3-compatible, so one class handles both. Each photo goes to the
+# first backend that is configured, has room, and works. If Drive is full or
+# failing, the app moves on to R2, and then B2, automatically.
 #
 # R2 env vars:  R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
 # B2 env vars:  B2_ENDPOINT, B2_KEY_ID, B2_APPLICATION_KEY, B2_BUCKET
@@ -172,6 +176,7 @@ def _build_backends():
     env = os.environ.get
     r2_account = env("R2_ACCOUNT_ID")
     return [
+        DriveBackend(),
         S3Backend(
             "Cloudflare R2",
             f"https://{r2_account}.r2.cloudflarestorage.com" if r2_account else None,
@@ -191,7 +196,7 @@ STORAGE_CHAIN = _build_backends()
 
 
 def store_in_cloud(filename, binary, mimetype="image/jpeg"):
-    """Try each configured backend in order. Returns the backend's name, or None."""
+    """Try each configured backend in order (Drive, R2, B2). Returns its name, or None."""
     for backend in STORAGE_CHAIN:
         if not backend.configured:
             continue
@@ -252,19 +257,11 @@ def upload():
     with open(filepath, "wb") as f:
         f.write(binary)
 
-    # Permanent copy goes to Google Drive, if configured. This is the durable
-    # archive — local disk on most free hosts gets wiped periodically.
-    saved_to_drive = upload_to_drive(filename, binary, mimetype="image/jpeg")
-
-    # Cloud object storage: Cloudflare R2 first, Backblaze B2 if R2 is full or down.
+    # Permanent copy: Google Drive first, then R2, then B2 (first one that works).
+    # The local copy above only powers the live /gallery view.
     stored_in = store_in_cloud(filename, binary, mimetype="image/jpeg")
 
-    return jsonify({
-        "ok": True,
-        "filename": filename,
-        "drive_backup": saved_to_drive,
-        "cloud_storage": stored_in,
-    })
+    return jsonify({"ok": True, "filename": filename, "cloud_storage": stored_in})
 
 
 @app.route("/gallery/login", methods=["GET", "POST"])

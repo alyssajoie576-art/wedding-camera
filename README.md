@@ -3,10 +3,10 @@
 A tiny Flask app: guests scan a QR code → see a personalized camera with your
 photo on the lens → tap anywhere → it flips open into a live viewfinder →
 tap to snap → the photo auto-saves (fixed filter + timestamp baked in, no
-choices for guests) straight to a shared album **and** to your Google Drive.
+choices for guests) straight to your Google Drive (with Cloudflare R2 and
+Backblaze B2 as automatic backups).
 
-100% free to run — no paid services required (Google Drive storage is also free,
-up to your account's normal Drive quota).
+100% free to run — no paid services required (Google Drive uses your free 15 GB).
 
 ---
 
@@ -63,34 +63,58 @@ To test on your **phone** before the wedding, connect your phone to the same
 WiFi as your computer, then visit `http://YOUR-COMPUTER-IP:5000` (find your
 IP with `ipconfig`/`ifconfig`).
 
-## 2b. Set up Google Drive backup (recommended — this is what makes photos permanent)
+## 2b. Google Drive (photos are saved here first)
 
-Free hosts like Render's free tier wipe their disk periodically, which is
-why photos can vanish after a few days if you rely on local storage alone.
-Google Drive is a separate, durable place for photos to land. One-time setup:
+Every photo is uploaded to a folder in **your own Google Drive**, using your
+free 15 GB. If Drive is ever full or has a problem, the app automatically
+switches to Cloudflare R2, and then Backblaze B2 (see 2c) — guests never notice.
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a new project (any name).
-2. In "APIs & Services" → "Library", search for **Google Drive API** and click **Enable**.
-3. Go to "APIs & Services" → "Credentials" → **Create Credentials** → **Service account**. Give it any name, click through the defaults, then **Done**.
-4. Click into the new service account → **Keys** tab → **Add Key** → **Create new key** → **JSON**. This downloads a `.json` file — keep it private, don't commit it to GitHub.
-5. In Google Drive, create a folder for wedding photos (e.g. "Amelia & Daniel Wedding Photos"). Right-click it → **Share** → paste the service account's email address (it looks like `something@your-project.iam.gserviceaccount.com`, found inside the JSON file or on the service account's page) → give it **Editor** access.
-6. Open the folder in your browser and copy the folder ID from the URL: `https://drive.google.com/drive/folders/`**`THIS_PART`**.
-7. Set two environment variables wherever you host the app (see step 3 — most hosts have an "Environment" tab in their dashboard):
-   - `GDRIVE_FOLDER_ID` → the folder ID from step 6
-   - `GOOGLE_SERVICE_ACCOUNT_JSON` → paste the **entire contents** of the JSON file you downloaded in step 4 (as one line)
+The app uploads *as you*. (Don't use a "service account" / robot account —
+Google gave those zero storage in 2025, so uploads fail.) You do the setup once:
 
-That's it — once both variables are set, every photo guests take is uploaded
-to that Drive folder automatically, in addition to the shared in-app album.
-If you skip this section, the app still works fine; photos just stay local
-only, which isn't durable long-term on most free hosts.
+**A. Create a Google Cloud project and turn on Drive**
+1. Go to [console.cloud.google.com](https://console.cloud.google.com), sign in with the Gmail that owns the Drive, and create a new project (any name).
+2. Open **APIs & Services → Library**, search **Google Drive API**, click **Enable**.
 
-## 2c. Optional: automatic storage failover (Cloudflare R2 → Backblaze B2)
+**B. Set up the permission screen (do this BEFORE getting your token)**
+3. Open **APIs & Services → OAuth consent screen** (Google may call it "Google Auth Platform") and click **Get started**. Choose **External**, give it any app name (e.g. "Wedding Camera"), and use your email for the contact fields.
+4. Open the **Audience** tab and click **Publish app** (so it says "In production"). Important: if you skip this, your access expires after 7 days and photos will stop saving. You'll see an "unverified app" warning later — that's normal for a personal app, and you're the only user.
 
-Photos go to Cloudflare R2 first. When R2 reaches its size cap (default 9.5 GB,
-just under the free 10 GB) or an upload to it fails, the app switches to
-Backblaze B2 automatically. R2 never refuses uploads on its own — it just
-starts billing past 10 GB — so the cap is what keeps you free. You can set
-either service up alone; unconfigured ones are skipped.
+**C. Create your app's login (Client ID and Secret)**
+5. Open **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+6. Application type: **Web application**. Under **Authorized redirect URIs** add exactly: `https://developers.google.com/oauthplayground`
+7. Click **Create**, then copy the **Client ID** and **Client secret**.
+
+**D. Get your refresh token (the "permanent key" the app uses)**
+8. Go to [developers.google.com/oauthplayground](https://developers.google.com/oauthplayground).
+9. Click the **gear icon** (top right) → tick **Use your own OAuth credentials** → paste your Client ID and Client secret → close the box.
+10. In the box on the left, type `https://www.googleapis.com/auth/drive` and click **Authorize APIs**.
+11. Sign in with the same Gmail. If Google says it "hasn't verified this app", click **Advanced → Go to (app name)**, then **Allow**.
+12. Click **Exchange authorization code for tokens**, then copy the **Refresh token**.
+
+**E. Make the folder**
+13. In Google Drive, create a folder (e.g. "Wedding Photos"). Open it and copy the ID from the address bar: `drive.google.com/drive/folders/`**`THIS_PART`**
+
+**F. Give the app the four values** (in your host's dashboard under "Environment" — never put these in GitHub):
+- `GOOGLE_CLIENT_ID` → from step 7
+- `GOOGLE_CLIENT_SECRET` → from step 7
+- `GOOGLE_REFRESH_TOKEN` → from step 12
+- `GDRIVE_FOLDER_ID` → from step 13
+
+Done! Take a test photo and check that it shows up in your Drive folder.
+If photos stop appearing there later, the token was probably revoked or
+expired — repeat part D to get a new one. In the meantime photos keep
+saving to R2/B2 if you've set those up.
+
+## 2c. Backup storage (Cloudflare R2 → Backblaze B2)
+
+The order is always **Google Drive → Cloudflare R2 → Backblaze B2**. Each photo
+is saved in the first one that works. If Drive is full or has a problem, photos
+go to R2. When R2 reaches its size cap (default 9.5 GB, just under the free
+10 GB) or an upload to it fails, the app switches to B2. R2 never refuses
+uploads on its own — it just starts billing past 10 GB — so the cap is what
+keeps you free. Any service you haven't set up is skipped, so you can use just
+Drive, or Drive plus one backup, or all three.
 
 **Cloudflare R2** — create a bucket, then an API token with read/write access
 to it (R2 → Manage API Tokens). Set these environment variables:
@@ -103,7 +127,6 @@ it (App Keys). Set: `B2_ENDPOINT` (the bucket's S3 endpoint, e.g.
 
 Optional: `R2_MAX_GB` / `B2_MAX_GB` change the caps (default 9.5 each).
 The upload response and server logs show which service each photo landed in.
-This runs alongside Google Drive (2b) — use either, both, or neither.
 
 ## 3. Get it online for the wedding day (free options)
 
@@ -162,7 +185,8 @@ grab a quick QR image pointed at whatever URL the app is currently running on.
   in the `BUILT_IN_FILTER` dict in `app.py`. The timestamp is drawn directly
   onto the photo in `templates/index.html` (`stampTimestamp` function).
 - Local copies in `static/uploads/` power the live `/gallery` view during
-  the event, but aren't guaranteed to persist on free hosting — Google Drive
-  (step 2b) is the permanent archive.
+  the event, but aren't guaranteed to persist on free hosting. The permanent
+  copies live in Google Drive (2b), or R2/B2 (2c) if Drive was unavailable —
+  so `/gallery` may not show every photo; check those for the full set.
 - Guests can tap the small ⟳ button in the top-right of the viewfinder to
   switch between front and back camera.
