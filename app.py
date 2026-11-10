@@ -100,7 +100,47 @@ class DriveBackend:
 
 
 # ─────────────────────────────────────────────────────────────
-# Storage chain: Google Drive first, then Cloudflare R2, then Backblaze B2
+# Google Apps Script uploader (no Google Cloud needed)
+# A tiny script in your own Google account saves each photo into your Drive
+# folder. Environment variables: APPS_SCRIPT_URL, APPS_SCRIPT_SECRET
+# (setup steps: README section 2a / apps_script/Code.gs)
+# ─────────────────────────────────────────────────────────────
+class AppsScriptBackend:
+    name = "Google Drive (Apps Script)"
+
+    def __init__(self):
+        self.url = (os.environ.get("APPS_SCRIPT_URL") or "").strip()
+        self.secret = (os.environ.get("APPS_SCRIPT_SECRET") or "").strip()
+
+    @property
+    def configured(self):
+        return bool(self.url and self.secret)
+
+    def has_room(self, incoming_bytes):
+        return True  # Drive itself will refuse if the account is full; the chain then moves on
+
+    def upload(self, filename, binary, mimetype="image/jpeg"):
+        import requests
+        payload = {
+            "secret": self.secret,
+            "filename": filename,
+            "mimeType": mimetype,
+            "data": base64.b64encode(binary).decode("ascii"),
+        }
+        # text/plain avoids a browser-style preflight; Apps Script reads the raw body.
+        resp = requests.post(self.url, data=json.dumps(payload),
+                             headers={"Content-Type": "text/plain;charset=utf-8"}, timeout=60)
+        resp.raise_for_status()
+        try:
+            result = resp.json()
+        except ValueError:
+            raise RuntimeError("Apps Script did not return JSON (is the deployment set to 'Anyone'?): " + resp.text[:200])
+        if not result.get("ok"):
+            raise RuntimeError("Apps Script said: " + str(result.get("error")))
+
+
+# ─────────────────────────────────────────────────────────────
+# Storage chain: Apps Script, then Google Drive (OAuth), then Cloudflare R2, then Backblaze B2
 # ─────────────────────────────────────────────────────────────
 # R2 and B2 are S3-compatible, so one class handles both. Each photo goes to the
 # first backend that is configured, has room, and works. If Drive is full or
@@ -173,6 +213,7 @@ def _build_backends():
     env = os.environ.get
     r2_account = env("R2_ACCOUNT_ID")
     return [
+        AppsScriptBackend(),
         DriveBackend(),
         S3Backend(
             "Cloudflare R2",
@@ -285,8 +326,21 @@ def gallery_login():
 @login_required
 def storage_check():
     """Owner-only: shows why photos aren't reaching Google Drive (no secrets are printed)."""
+    a = next((b for b in STORAGE_CHAIN if isinstance(b, AppsScriptBackend)), None)
+    lines = ["APPS SCRIPT CHECK", ""]
+    for var in ("APPS_SCRIPT_URL", "APPS_SCRIPT_SECRET"):
+        lines.append(f"{var}: {'set' if os.environ.get(var) else 'MISSING'}")
+    if a is not None and a.configured:
+        try:
+            a.upload("storage-check-test.txt", b"ok", "text/plain")
+            lines += ["", "-> SUCCESS: a test file named storage-check-test.txt was added to your Drive folder. Saving works."]
+        except Exception as e:
+            lines += ["", f"-> FAILED: {type(e).__name__}: {e}"]
+    else:
+        lines += ["", "-> Not set up (that's fine if you use the Google Cloud method below)."]
+    lines += ["", "----------------------------------------", ""]
     d = next((b for b in STORAGE_CHAIN if isinstance(b, DriveBackend)), None)
-    lines = ["GOOGLE DRIVE CHECK", ""]
+    lines += ["GOOGLE CLOUD DRIVE CHECK", ""]
     for var in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "GDRIVE_FOLDER_ID"):
         lines.append(f"{var}: {'set' if os.environ.get(var) else 'MISSING'}")
     if d is None or not d.configured:

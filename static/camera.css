@@ -1,0 +1,76 @@
+/* Wedding camera: full-screen intro video, then the framed live viewfinder */
+:root { --orange: #e8825a; --pink: #f08fb0; --sage: #8a9a6e; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; }
+body { font-family: 'Work Sans', sans-serif; }
+
+/* ---------- Screen 1: intro video ---------- */
+.intro {
+  position: fixed; inset: 0; background: #fff; overflow: hidden; cursor: pointer;
+  --w: max(100vw, calc(100dvh * 9 / 16));      /* tall phones: fill the screen */
+  transition: opacity .45s ease;
+}
+@media (min-aspect-ratio: 3/5) {                /* tablets / desktop: show it whole */
+  .intro { --w: min(100vw, calc(100dvh * 9 / 16)); }
+}
+.intro.hide { opacity: 0; pointer-events: none; }
+.intro-box {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: var(--w); aspect-ratio: 9 / 16;
+}
+.intro-box video, .intro-box img.still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.intro-box img.still { display: none; }
+.intro-hint {
+  position: absolute; left: 51%; top: 69.5%; transform: translate(-50%, -50%);
+  width: 70%; text-align: center; white-space: nowrap;
+  font-family: 'Space Mono', monospace; font-weight: 400;
+  font-size: calc(var(--w) * 0.04); letter-spacing: .05em;
+  color: var(--orange); opacity: 0; pointer-events: none;
+}
+.intro-hint.show { animation: hintIn .6s ease forwards, pulse 1.8s ease-in-out .6s infinite; }
+@keyframes hintIn { to { opacity: 1; } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ---------- Screen 2: framed camera ---------- */
+.camera { position: fixed; inset: 0; background: #fff; display: none; align-items: center; justify-content: center; }
+.camera.show { display: flex; animation: camIn .5s ease; }
+@keyframes camIn { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+
+.sheet { position: relative; width: min(100vw, calc(100dvh * 5 / 7)); aspect-ratio: 5 / 7; }
+/* the live picture sits in the hole of the frame artwork */
+.hole { position: absolute; left: 24.8%; top: 28.5%; width: 50.4%; height: 50.2%; overflow: hidden; background: #f4e9ee; z-index: 1; }
+.hole video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.hole.mirror video { transform: scaleX(-1); }
+.frame-art {
+  position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3%, #000 97%, transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 3%, #000 97%, transparent 100%);
+}
+.vf-corner { position: absolute; width: 7%; aspect-ratio: 1; border: 2px solid rgba(255,255,255,.9); filter: drop-shadow(0 0 2px rgba(0,0,0,.35)); pointer-events: none; z-index: 3; }
+.vf-corner.tl { left: 4%; top: 3%; border-right: 0; border-bottom: 0; }
+.vf-corner.tr { right: 4%; top: 3%; border-left: 0; border-bottom: 0; }
+.vf-corner.bl { left: 4%; bottom: 3%; border-right: 0; border-top: 0; }
+.vf-corner.br { right: 4%; bottom: 3%; border-left: 0; border-top: 0; }
+.vf-hint { position: absolute; left: 0; right: 0; bottom: 5%; text-align: center; margin: 0; z-index: 3; pointer-events: none;
+  font-family: 'Space Mono', monospace; font-size: clamp(10px, 2.8vw, 14px); letter-spacing: .06em; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.flip-btn {
+  position: absolute; right: 4%; top: 3%; z-index: 4; width: 11%; aspect-ratio: 1; border-radius: 50%;
+  border: 0; background: rgba(255,255,255,.75); color: #444; font-size: clamp(14px, 4vw, 22px); line-height: 1; cursor: pointer;
+}
+/* the pink aperture on the artwork is the shutter button */
+.shutter { position: absolute; left: 50%; top: 85.4%; width: 14%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  border: 0; border-radius: 50%; background: transparent; cursor: pointer; z-index: 5; }
+.shutter:active { background: rgba(255,255,255,.35); }
+.name-field {
+  position: absolute; left: 50%; top: 94.5%; transform: translate(-50%, -50%); width: 56%; z-index: 5;
+  padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(240,143,176,.7); background: rgba(255,255,255,.88);
+  font-family: 'Work Sans', sans-serif; font-size: 16px; text-align: center; color: #555; outline: none;
+}
+.name-field:focus { border-color: var(--pink); }
+
+/* saving / thank-you message shown inside the hole */
+.success { position: absolute; inset: 0; z-index: 4; display: none; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 8%; background: rgba(255,255,255,.93); color: var(--sage); }
+.success .icon { font-size: clamp(28px, 9vw, 44px); }
+.success h2 { margin: .3em 0 .2em; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: clamp(20px, 6vw, 30px); }
+.success p { margin: 0; font-size: clamp(12px, 3.4vw, 15px); color: #777; }

@@ -396,23 +396,6 @@ html, body {
   margin: 0;
 }
 
-/* Shutter flash */
-.flash-overlay {
-  position: absolute;
-  inset: 0;
-  background: #fff;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 5;
-}
-.flash-overlay.flash {
-  animation: flashPop 0.35s ease-out;
-}
-@keyframes flashPop {
-  0% { opacity: 0; }
-  15% { opacity: 0.9; }
-  100% { opacity: 0; }
-}
 .btn {
   flex: 1;
   padding: 13px 14px;
