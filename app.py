@@ -12,7 +12,6 @@ from flask import (
     session, send_file, jsonify, abort
 )
 import qrcode
-from werkzeug.exceptions import HTTPException
 
 logger = logging.getLogger("wedding-camera")
 
@@ -34,13 +33,7 @@ WEDDING = {
 }
 
 # Passcode the bride & groom use to view the private gallery.
-GALLERY_PASSCODE = os.environ.get("GALLERY_PASSCODE", "ourwedding2026")
-
-# The one built-in look every photo gets automatically. Guests can't change this.
-BUILT_IN_FILTER = {
-    "label": "Vintage",
-    "css": "sepia(0.35) contrast(1.1) brightness(0.95) saturate(1.3)",
-}
+GALLERY_PASSCODE = "ourwedding2026"
 
 # ─────────────────────────────────────────────────────────────
 # Google Drive (first choice for storing photos)
@@ -216,7 +209,7 @@ def store_in_cloud(filename, binary, mimetype="image/jpeg"):
 
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change-this-to-any-random-string")  # needed for login session
+app.secret_key = "change-this-to-any-random-string"  # needed for login session
 
 UPLOAD_FOLDER = os.path.join(app.static_folder, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -231,38 +224,13 @@ def login_required(f):
     return wrapped
 
 
-@app.errorhandler(Exception)
-def handle_error(e):
-    """Return the real error as JSON (and log it) instead of a blank 500 page."""
-    if isinstance(e, HTTPException):
-        return e
-    logger.exception("Unhandled error")
-    return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-
-
-@app.route("/drive-test")
-@login_required
-def drive_test():
-    """Log in at /gallery/login, then open /drive-test to see the exact Google Drive error."""
-    d = STORAGE_CHAIN[0]
-    if not d.configured:
-        return ("Missing one of GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / "
-                "GOOGLE_REFRESH_TOKEN / GDRIVE_FOLDER_ID in Render's Environment tab"), 500
-    try:
-        d.upload("drive-test.txt", b"hello", "text/plain")
-        return "Drive OK. Check your Drive folder for drive-test.txt"
-    except Exception as e:
-        logger.exception("Drive test failed")
-        return f"Drive FAILED: {type(e).__name__}: {e}", 500
-
-
 @app.route("/")
 def camera():
     """The page guests land on after scanning the QR code."""
     intro = WEDDING.get("intro_video")
     if intro and not os.path.exists(os.path.join(app.static_folder, intro)):
         intro = None  # no video file yet -> fall back to the camera illustration
-    return render_template("index.html", wedding=WEDDING, filter=BUILT_IN_FILTER, intro_video=intro)
+    return render_template("index.html", wedding=WEDDING, intro_video=intro)
 
 
 @app.route("/upload", methods=["POST"])
@@ -293,6 +261,12 @@ def upload():
     # The local copy above only powers the live /gallery view.
     stored_in = store_in_cloud(filename, binary, mimetype="image/jpeg")
 
+    # If cloud storage is set up but every backend failed, don't tell the guest
+    # it was saved: the local copy can vanish on free hosting. They can retry.
+    if stored_in is None and any(b.configured for b in STORAGE_CHAIN):
+        logger.error("Photo %s could not be saved to any cloud backend.", filename)
+        return jsonify({"ok": False, "error": "Could not save to the album"}), 502
+
     return jsonify({"ok": True, "filename": filename, "cloud_storage": stored_in})
 
 
@@ -305,6 +279,31 @@ def gallery_login():
             return redirect(request.args.get("next") or url_for("gallery"))
         error = "That passcode isn't right — try again."
     return render_template("login.html", wedding=WEDDING, error=error)
+
+
+@app.route("/gallery/storage-check")
+@login_required
+def storage_check():
+    """Owner-only: shows why photos aren't reaching Google Drive (no secrets are printed)."""
+    d = next((b for b in STORAGE_CHAIN if isinstance(b, DriveBackend)), None)
+    lines = ["GOOGLE DRIVE CHECK", ""]
+    for var in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "GDRIVE_FOLDER_ID"):
+        lines.append(f"{var}: {'set' if os.environ.get(var) else 'MISSING'}")
+    if d is None or not d.configured:
+        lines += ["", "-> One or more variables are missing. Add them in your host's Environment settings, then redeploy."]
+        return "\n".join(lines), 200, {"Content-Type": "text/plain; charset=utf-8"}
+    try:
+        about = d.service().about().get(fields="user(emailAddress),storageQuota").execute()
+        lines.append(f"Signed in as: {about['user']['emailAddress']}")
+        q = about.get("storageQuota", {})
+        lines.append(f"Storage used: {int(q.get('usage', 0)) / 1e9:.2f} GB of {int(q.get('limit', 0)) / 1e9:.2f} GB")
+        folder = d.service().files().get(fileId=d.folder_id, fields="name,mimeType,trashed,capabilities(canAddChildren)").execute()
+        lines.append(f"Folder: {folder.get('name')}  (can add files: {folder.get('capabilities', {}).get('canAddChildren')})")
+        d.upload("storage-check-test.txt", b"ok", "text/plain")
+        lines += ["", "-> SUCCESS: a test file named storage-check-test.txt was added to your folder. Drive saving works."]
+    except Exception as e:
+        lines += ["", f"-> FAILED: {type(e).__name__}: {e}"]
+    return "\n".join(lines), 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
 @app.route("/gallery/logout")
@@ -349,4 +348,4 @@ def qr_code():
 
 if __name__ == "__main__":
     # host=0.0.0.0 so phones on the same wifi (or via a tunnel) can reach it
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=True)

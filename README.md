@@ -2,7 +2,7 @@
 
 A tiny Flask app: guests scan a QR code → see a personalized camera with your
 photo on the lens → tap anywhere → it flips open into a live viewfinder →
-tap to snap → the photo auto-saves (fixed filter + timestamp baked in, no
+tap to snap → the photo auto-saves (timestamp baked in, no filter, no
 choices for guests) straight to your Google Drive (with Cloudflare R2 and
 Backblaze B2 as automatic backups).
 
@@ -29,38 +29,19 @@ GALLERY_PASSCODE = "ourwedding2026"   # what the couple types in to see photos
 
 Also update `PARTNER_1` / `PARTNER_2` at the top of `generate_qr_card.py` to match.
 
-### 1b. Add your photo to the camera
+### 1b. Intro video and camera artwork
 
-Drop a photo of the two of you at `static/couple.jpg` (a square-ish crop looks
-best — it sits inside a circular lens). If you'd rather use a different
-filename, just update `"couple_photo"` above to match. If no photo is found,
-guests just see a heart icon instead — nothing breaks.
+The page is built from files in `static/`:
 
-### 1d. Intro video (optional)
+- `intro.mp4` plays once, full screen, when guests open the page. "continue to open camera" then pulses; guests can tap at any time to skip ahead.
+- `camera-frame.webp` is the camera screen artwork. The live camera shows through the transparent hole, and the pink aperture at the bottom is the shutter button.
+- `intro-end.jpg` / `intro-start.jpg` are stills of the video's last/first frame, used as a fallback if a phone blocks autoplay.
 
-Put an mp4 at `static/intro.mp4`. It plays by itself (muted, looping) when the
-page opens, with "Tap anywhere to open the camera" pulsing on top. Guests can
-tap at any moment — they don't have to wait for it to finish — and it flips
-into the live camera. If there's no `static/intro.mp4`, guests see the camera
-illustration with your couple photo instead.
+Photos are cropped to the shape of the hole (5:7, portrait), so what guests see is what gets saved.
 
-Tips: use **mp4 (H.264)** — iPhone `.mov` files may not play on Android;
-keep it **under about 10 MB** (720p, 10–20 seconds) so it loads quickly on
-venue Wi-Fi/data; and remove the audio track, since phones only autoplay
-muted video. To use a different filename, change `"intro_video"` in `app.py`.
+### 1c. Photo look
 
-### 1c. The built-in look
-
-Every photo automatically gets one fixed filter plus a burned-in date/time
-stamp — guests can't change either. Edit it in `app.py`:
-
-```python
-BUILT_IN_FILTER = {
-    "label": "Vintage",
-    "css": "sepia(0.35) contrast(1.1) brightness(0.95) saturate(1.3)",
-}
-```
-Any valid CSS `filter` value works (e.g. `"grayscale(1) contrast(1.05)"` for black & white).
+Photos are saved as-is (no filter, no flash) with a burned-in date/time stamp.
 
 ## 2. Run it locally to test
 
@@ -186,7 +167,7 @@ grab a quick QR image pointed at whatever URL the app is currently running on.
 
 - Guests scan the code → see your photo on a personalized camera → tap
   anywhere → it flips open into a live viewfinder → tap anywhere to snap →
-  the photo saves itself automatically (fixed filter + timestamp, no
+  the photo saves itself automatically (timestamp only, no filter, no
   choices, no retake/confirm step) and the page resets for the next guest.
 - The bride and groom (or a designated helper) can browse everything in
   Google Drive directly, or visit `/gallery` for a live in-app view during
@@ -194,8 +175,7 @@ grab a quick QR image pointed at whatever URL the app is currently running on.
 
 ## Notes & tweaks
 
-- The fixed filter is applied via canvas + a CSS filter string — change it
-  in the `BUILT_IN_FILTER` dict in `app.py`. The timestamp is drawn directly
+- The timestamp is drawn directly
   onto the photo in `templates/index.html` (`stampTimestamp` function).
 - Local copies in `static/uploads/` power the live `/gallery` view during
   the event, but aren't guaranteed to persist on free hosting. The permanent
