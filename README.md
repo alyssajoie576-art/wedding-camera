@@ -57,6 +57,18 @@ To test on your **phone** before the wedding, connect your phone to the same
 WiFi as your computer, then visit `http://YOUR-COMPUTER-IP:5000` (find your
 IP with `ipconfig`/`ifconfig`).
 
+## 2a. Google Drive via Apps Script (simplest, no Google Cloud)
+
+1. Go to script.google.com, create a new project, and paste in `apps_script/Code.gs`.
+2. Set `FOLDER_ID` (the ID of your Drive folder) and change `SECRET` to a long random password.
+3. Run the `authorize` function once and accept the permission prompts.
+4. Deploy → New deployment → Web app. Execute as: **Me**. Who has access: **Anyone**. Copy the web app URL.
+5. On your host, set `APPS_SCRIPT_URL` (that URL) and `APPS_SCRIPT_SECRET` (the same password as `SECRET`).
+6. After editing `Code.gs` later, use Deploy → Manage deployments → **New version**, or the old code keeps running.
+7. Log in at `/gallery`, then open `/gallery/storage-check` to confirm a test file lands in your folder.
+
+Testing locally with no cloud storage? Set `ALLOW_LOCAL_ONLY=1`, otherwise uploads are refused so guests are never told a photo was saved when it wasn't. Also set `SECRET_KEY` to a random string on your host.
+
 ## 2b. Google Drive (photos are saved here first)
 
 Every photo is uploaded to a folder in **your own Google Drive**, using your

@@ -141,18 +141,22 @@ function snapPhoto() {
   if (w / h > FRAME_RATIO) { sw = Math.round(h * FRAME_RATIO); sx = Math.round((w - sw) / 2); }
   else { sh = Math.round(w / FRAME_RATIO); sy = Math.round((h - sh) / 2); }
 
-  canvas.width = sw;
-  canvas.height = sh;
+  // Shrink big phone photos before upload so they send fast on mobile data.
+  const MAX_H = 1600;
+  const scale = sh > MAX_H ? MAX_H / sh : 1;
+  const ow = Math.round(sw * scale), oh = Math.round(sh * scale);
+  canvas.width = ow;
+  canvas.height = oh;
   if (facingMode === 'user') {
     ctx.save();
-    ctx.translate(sw, 0);
+    ctx.translate(ow, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, ow, oh);
     ctx.restore();
   } else {
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, ow, oh);
   }
-  stampTimestamp(sw, sh);
+  stampTimestamp(ow, oh);
 
   stopStream();
   uploadPhoto();
@@ -191,7 +195,7 @@ async function uploadPhoto() {
     successNote.textContent = 'Thank you for capturing this moment.';
   } catch (err) {
     successTitle.textContent = "That didn't save";
-    successNote.textContent = "Let's try again: the camera is coming back.";
+    successNote.textContent = (err && err.message ? err.message + ". " : "") + "Let's try again: the camera is coming back.";
   } finally {
     setTimeout(resetForNext, 2400);
   }

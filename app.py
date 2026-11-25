@@ -129,7 +129,7 @@ class AppsScriptBackend:
         }
         # text/plain avoids a browser-style preflight; Apps Script reads the raw body.
         resp = requests.post(self.url, data=json.dumps(payload),
-                             headers={"Content-Type": "text/plain;charset=utf-8"}, timeout=60)
+                             headers={"Content-Type": "text/plain;charset=utf-8"}, timeout=90)
         resp.raise_for_status()
         try:
             result = resp.json()
@@ -250,7 +250,7 @@ def store_in_cloud(filename, binary, mimetype="image/jpeg"):
 
 
 app = Flask(__name__)
-app.secret_key = "change-this-to-any-random-string"  # needed for login session
+app.secret_key = os.environ.get("SECRET_KEY", "change-this-to-any-random-string")  # set SECRET_KEY on your host
 
 UPLOAD_FOLDER = os.path.join(app.static_folder, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -304,9 +304,16 @@ def upload():
 
     # If cloud storage is set up but every backend failed, don't tell the guest
     # it was saved: the local copy can vanish on free hosting. They can retry.
-    if stored_in is None and any(b.configured for b in STORAGE_CHAIN):
-        logger.error("Photo %s could not be saved to any cloud backend.", filename)
-        return jsonify({"ok": False, "error": "Could not save to the album"}), 502
+    if stored_in is None:
+        if any(b.configured for b in STORAGE_CHAIN):
+            logger.error("Photo %s could not be saved to any cloud backend.", filename)
+            return jsonify({"ok": False, "error": "Could not save to the album"}), 502
+        # No cloud storage configured at all. Local files vanish on free hosting,
+        # so refuse unless you are deliberately testing locally.
+        if os.environ.get("ALLOW_LOCAL_ONLY") != "1":
+            logger.error("No cloud storage is configured (see /gallery/storage-check). "
+                         "Set ALLOW_LOCAL_ONLY=1 to allow local-only saving while testing.")
+            return jsonify({"ok": False, "error": "Album storage is not set up"}), 503
 
     return jsonify({"ok": True, "filename": filename, "cloud_storage": stored_in})
 
@@ -327,7 +334,9 @@ def gallery_login():
 def storage_check():
     """Owner-only: shows why photos aren't reaching Google Drive (no secrets are printed)."""
     a = next((b for b in STORAGE_CHAIN if isinstance(b, AppsScriptBackend)), None)
-    lines = ["APPS SCRIPT CHECK", ""]
+    lines = ["Backends are tried in this order: Apps Script, Google Drive (OAuth), R2, B2.",
+             "Configured: " + (", ".join(b.name for b in STORAGE_CHAIN if b.configured) or "NONE"), "",
+             "APPS SCRIPT CHECK", ""]
     for var in ("APPS_SCRIPT_URL", "APPS_SCRIPT_SECRET"):
         lines.append(f"{var}: {'set' if os.environ.get(var) else 'MISSING'}")
     if a is not None and a.configured:
@@ -402,4 +411,4 @@ def qr_code():
 
 if __name__ == "__main__":
     # host=0.0.0.0 so phones on the same wifi (or via a tunnel) can reach it
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG") == "1")
